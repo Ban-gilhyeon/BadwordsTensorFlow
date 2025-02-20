@@ -1,95 +1,113 @@
-import os
-import logging
-os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"  # TensorFlow 메시지 최소화
-logging.getLogger("datasets").setLevel(logging.ERROR)  # datasets 로그 최소화
+import torch
+from torch.utils.data import Dataset, DataLoader
+from transformers import BertForSequenceClassification, AutoTokenizer
+from datasets import load_dataset
+from tqdm import tqdm  # 진행 상황 모니터링용
+import numpy as np
+from sklearn.metrics import label_ranking_average_precision_score, classification_report
 
-import tensorflow as tf
-from tensorflow.keras import layers, models
-import matplotlib.pyplot as plt  # 학습 그래프 출력
-from datasets import load_dataset, DownloadConfig
+# 1. 데이터셋 로드 및 확인
+dataset = load_dataset('smilegate-ai/kor_unsmile')
+data_train = dataset["train"]
+data_valid = dataset["valid"]
 
-# 1. 데이터셋 준비 및 다운로드 진행 (진행바 비활성화)
-down_config = DownloadConfig(disable_tqdm=True)
-ds = load_dataset("smilegate-ai/kor_unsmile", download_config=down_config)
+print("첫 샘플:", data_train[0])
 
-# 2. 데이터 전처리: 텍스트 벡터화
-max_tokens = 10000
-max_len = 20
+# 2. 모델 및 토크나이저 초기화
+model_name = 'beomi/kcbert-base'
+tokenizer = AutoTokenizer.from_pretrained(model_name)
 
-vectorize_layer = layers.TextVectorization(
-    max_tokens=max_tokens,
-    output_mode='int',
-    output_sequence_length=max_len
-)
-# "train" 분할의 "문장" 열을 사용하여 어휘 사전 구축
-vectorize_layer.adapt(ds["train"]["문장"])
+# 첫 샘플의 'labels' 길이를 이용해 num_labels 결정
+num_labels = len(data_train[0]['labels'])
+model = BertForSequenceClassification.from_pretrained(model_name, num_labels=num_labels)
 
-# 3. 모델 구성
-embedding_dim = 16
-num_classes = 10  # 출력 클래스 수 (데이터셋의 레이블 길이가 10인 것으로 가정)
+device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
+model.to(device)
 
-model = models.Sequential([
-    layers.Input(shape=(1,), dtype=tf.string),
-    vectorize_layer,
-    layers.Embedding(input_dim=max_tokens, output_dim=embedding_dim, mask_zero=True),
-    layers.GlobalAveragePooling1D(),
-    layers.Dense(16, activation='relu'),
-    layers.Dense(num_classes, activation='softmax')  # 다중 분류를 위한 출력 레이어
-])
 
-# 타깃 레이블이 원-핫 인코딩되어 있으므로 categorical_crossentropy 사용
-model.compile(optimizer='adam',
-              loss='categorical_crossentropy',
-              metrics=['accuracy'])
+# 3. CustomDataset 클래스 정의 (PyTorch Dataset 사용)
+class CustomDataset(Dataset):
+    def __init__(self, texts, labels, tokenizer, max_length):
+        self.encodings = tokenizer(texts, padding=True, truncation=True, max_length=max_length, return_tensors='pt')
+        self.labels = torch.tensor(labels, dtype=torch.float32)
 
-model.summary()
+    def __getitem__(self, index):
+        item = {key: val[index] for key, val in self.encodings.items()}
+        item['labels'] = self.labels[index]
+        return item
 
-# 4. 학습 및 검증 데이터 준비
-# 입력 텍스트를 tf.constant()로 변환해 tf.string 타입으로 지정하고, (n, 1) 모양으로 재조정합니다.
-train_texts = tf.constant([str(x) for x in ds["train"]["문장"]])
-train_texts = tf.reshape(train_texts, (-1, 1))
-train_labels = tf.constant(ds["train"]["labels"])  # 원-핫 인코딩된 레이블
-valid_texts = tf.constant([str(x) for x in ds["valid"]["문장"]])
-valid_texts = tf.reshape(valid_texts, (-1, 1))
-valid_labels = tf.constant(ds["valid"]["labels"])
+    def __len__(self):
+        return len(self.labels)
 
-# 5. 모델 학습
-history = model.fit(
-    train_texts,
-    train_labels,
-    epochs=10,
-    verbose=1,
-    validation_data=(valid_texts, valid_labels)
-)
 
-# 6. 검증 데이터 평가
-eval_results = model.evaluate(valid_texts, valid_labels, verbose=0)
-print("Validation results:", eval_results)
+# 4. 데이터셋 전처리: 텍스트와 라벨 추출 (컬럼명이 "문장"과 "labels"로 가정)
+train_texts = data_train["문장"]
+train_labels = data_train["labels"]
+val_texts = data_valid["문장"]
+val_labels = data_valid["labels"]
 
-# 7. 모델 저장 (Keras 네이티브 형식: .keras 확장자 사용)
-model.save("profanity_filter_model.keras")
+max_length = 128  # 최대 길이 설정
+train_dataset = CustomDataset(train_texts, train_labels, tokenizer, max_length)
+val_dataset = CustomDataset(val_texts, val_labels, tokenizer, max_length)
 
-# 8. 학습 그래프 그리기 및 저장
-plt.figure(figsize=(12, 5))
+# 5. DataLoader 생성
+train_loader = DataLoader(train_dataset, batch_size=8, shuffle=True)
+val_loader = DataLoader(val_dataset, batch_size=8, shuffle=False)
 
-# 손실 그래프
-plt.subplot(1, 2, 1)
-plt.plot(history.history['loss'], label='Train Loss')
-plt.plot(history.history['val_loss'], label='Validation Loss')
-plt.title("Loss")
-plt.xlabel("Epoch")
-plt.ylabel("Loss")
-plt.legend()
+# 6. 옵티마이저와 학습 파라미터 설정
+optimizer = torch.optim.Adam(model.parameters(), lr=1e-5)
+epochs = 1
 
-# 정확도 그래프
-plt.subplot(1, 2, 2)
-plt.plot(history.history['accuracy'], label='Train Accuracy')
-plt.plot(history.history['val_accuracy'], label='Validation Accuracy')
-plt.title("Accuracy")
-plt.xlabel("Epoch")
-plt.ylabel("Accuracy")
-plt.legend()
+# 7. 학습 루프 (tqdm으로 진행 상황 모니터링)
+for epoch in range(epochs):
+    model.train()
+    total_loss = 0
+    progress_bar = tqdm(train_loader, desc=f"Epoch {epoch + 1}/{epochs}", leave=False)
+    for batch in progress_bar:
+        optimizer.zero_grad()
 
-plt.tight_layout()
-plt.savefig("training_history.png")
-plt.show()
+        input_ids = batch['input_ids'].to(device)
+        attention_mask = batch['attention_mask'].to(device)
+        labels = batch['labels'].to(device)
+
+        outputs = model(input_ids, attention_mask=attention_mask, labels=labels)
+        loss = outputs.loss
+        total_loss += loss.item()
+
+        loss.backward()
+        optimizer.step()
+
+        progress_bar.set_postfix(loss=loss.item())
+
+    avg_loss = total_loss / len(train_loader)
+    print(f"Epoch {epoch + 1} 완료. 평균 Loss: {avg_loss:.4f}")
+
+# 8. 평가 단계
+model.eval()
+scores = []
+all_preds = []
+all_labels = []
+
+eval_bar = tqdm(val_loader, desc="Evaluation", leave=False)
+for batch in eval_bar:
+    with torch.no_grad():
+        input_ids = batch['input_ids'].to(device)
+        attention_mask = batch['attention_mask'].to(device)
+        labels = batch['labels'].to(device)
+
+        outputs = model(input_ids, attention_mask=attention_mask, labels=labels)
+        logits = outputs.logits
+
+        # 배치별 평가 점수 계산
+        score = label_ranking_average_precision_score(labels.cpu().numpy(), logits.cpu().numpy())
+        scores.append(score)
+
+        preds = torch.sigmoid(logits).cpu().numpy()  # 로짓을 시그모이드 함수로 변환
+        all_preds.extend(preds)
+        all_labels.extend(labels.cpu().numpy())
+
+# 9. 최종 평가 결과 출력 (임계값 0.5 적용)
+all_preds = np.array(all_preds) > 0.5
+report = classification_report(np.array(all_labels), all_preds)
+print("Classification Report:")
+print(report)
