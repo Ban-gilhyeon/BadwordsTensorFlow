@@ -15,6 +15,7 @@ EPOCHS = 3  # 빠른 테스트를 위해 에포크 수를 1로 설정
 LEARNING_RATE = 1e-5
 # MODEL_SAVE_PATH를 절대 경로로 설정 (또는 "saved_model"과 같이 상대 경로 대신 사용)
 MODEL_SAVE_PATH = os.path.abspath("./saved_model")
+ONNX_OUTPUT_PATH = os.path.abspath("./onnx_model")
 
 device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
 
@@ -160,6 +161,29 @@ def test(model, tokenizer, test_text):
     print("Predictions:", predictions.cpu().numpy())
 
 
+# ONNX 변환 함수
+def convert_to_onnx(model, output_path=ONNX_OUTPUT_PATH):
+    model.eval()
+    # dummy input 생성: (batch_size=1, sequence_length=MAX_LENGTH)
+    dummy_input_ids = torch.randint(0, 1000, (1, MAX_LENGTH)).to(device)
+    dummy_attention_mask = torch.ones((1, MAX_LENGTH)).to(device)
+
+    torch.onnx.export(
+        model,
+        (dummy_input_ids, dummy_attention_mask),
+        output_path,
+        input_names=["input_ids", "attention_mask"],
+        output_names=["logits"],
+        dynamic_axes={
+            "input_ids": {0: "batch_size", 1: "sequence_length"},
+            "attention_mask": {0: "batch_size", 1: "sequence_length"},
+            "logits": {0: "batch_size"}
+        },
+        opset_version=14
+    )
+    print(f"ONNX 모델이 '{output_path}'에 저장되었습니다.")
+
+
 if __name__ == '__main__':
     mode = input("Enter 'train' to train model, 'test' to test model: ").strip().lower()
 
@@ -174,5 +198,11 @@ if __name__ == '__main__':
         model.to(device)
         test_text = "너는 최고야"
         test(model, tokenizer,test_text)
+    elif mode == 'convert':
+        # 저장된 모델 불러와서 ONNX로 변환
+        model = BertForSequenceClassification.from_pretrained(MODEL_SAVE_PATH)
+        tokenizer = AutoTokenizer.from_pretrained(MODEL_SAVE_PATH)
+        model.to(device)
+        convert_to_onnx(model)
     else:
         print("Invalid mode. Please enter 'train' or 'test'.")
