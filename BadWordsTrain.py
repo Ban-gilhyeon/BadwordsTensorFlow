@@ -184,6 +184,43 @@ def convert_to_onnx(model, output_path=ONNX_OUTPUT_PATH):
     print(f"ONNX 모델이 '{output_path}'에 저장되었습니다.")
 
 
+def continue_train(epochs=2):
+    # 저장된 모델과 토크나이저 불러오기
+    model = BertForSequenceClassification.from_pretrained(MODEL_SAVE_PATH)
+    tokenizer = AutoTokenizer.from_pretrained(MODEL_SAVE_PATH)
+    model.to(device)
+
+    train_loader, _ = prepare_datasets(tokenizer)
+    optimizer = torch.optim.Adam(model.parameters(), lr=LEARNING_RATE)
+
+    for epoch in range(epochs):
+        model.train()
+        total_loss = 0
+        progress_bar = tqdm(train_loader, desc=f"Continue Epoch {epoch + 1}/{epochs}", leave=False)
+        for batch in progress_bar:
+            optimizer.zero_grad()
+            input_ids = batch['input_ids'].to(device)
+            attention_mask = batch['attention_mask'].to(device)
+            labels = batch['labels'].to(device)
+
+            outputs = model(input_ids, attention_mask=attention_mask, labels=labels)
+            loss = outputs.loss
+            total_loss += loss.item()
+
+            loss.backward()
+            optimizer.step()
+
+            progress_bar.set_postfix(loss=loss.item())
+
+        avg_loss = total_loss / len(train_loader)
+        print(f"Continue Epoch {epoch + 1} 완료. 평균 Loss: {avg_loss:.4f}")
+
+    # 재학습 후 모델 저장
+    model.save_pretrained(MODEL_SAVE_PATH)
+    tokenizer.save_pretrained(MODEL_SAVE_PATH)
+    print("모델 재학습 후 저장 완료.")
+
+
 if __name__ == '__main__':
     mode = input("Enter 'train' to train model, 'test' to test model: ").strip().lower()
 
@@ -204,5 +241,14 @@ if __name__ == '__main__':
         tokenizer = AutoTokenizer.from_pretrained(MODEL_SAVE_PATH)
         model.to(device)
         convert_to_onnx(model)
+
+    elif mode == 'result':
+        # 저장된 모델 불러와서 평가 결과만 출력
+        model = BertForSequenceClassification.from_pretrained(MODEL_SAVE_PATH)
+        tokenizer = AutoTokenizer.from_pretrained(MODEL_SAVE_PATH)
+        model.to(device)
+        evaluate(model, tokenizer)
+    elif mode == 'continue':
+        continue_train(epochs=2)
     else:
         print("Invalid mode. Please enter 'train' or 'test'.")
