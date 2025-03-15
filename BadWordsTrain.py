@@ -149,6 +149,7 @@ def test(model, tokenizer, test_text):
         max_length=MAX_LENGTH
     )
     test_encoding = {key: val.to(device) for key, val in test_encoding.items()}
+    tokens = tokenizer.convert_ids_to_tokens(test_encoding["input_ids"][0].tolist())
 
     model.eval()
     with torch.no_grad():
@@ -157,8 +158,18 @@ def test(model, tokenizer, test_text):
         predictions = (probabilities > 0.5).int()
 
     print("Test 문장:", test_text)
+    print("Test Token 문장 :", tokens)
     print("Probabilities:", probabilities.cpu().numpy())
     print("Predictions:", predictions.cpu().numpy())
+
+    # 예시 라벨 이름 목록 (실제 라벨명에 맞게 수정)
+    label_names = ["여성/가족", "남성", "성소수자", "인종/국적", "연령",
+                   "지역", "종교", "기타 혐오", "악플/욕설", "clean"]
+
+    # 예측 배열에서 1로 예측된 인덱스의 라벨을 추출
+    pred_array = predictions.cpu().numpy()[0]
+    predicted_labels = [label_names[i] for i, pred in enumerate(pred_array) if pred == 1]
+    print("Predicted Labels:", predicted_labels)
 
 
 # ONNX 변환 함수
@@ -233,7 +244,7 @@ if __name__ == '__main__':
         model = BertForSequenceClassification.from_pretrained(MODEL_SAVE_PATH)
         tokenizer = AutoTokenizer.from_pretrained(MODEL_SAVE_PATH)
         model.to(device)
-        test_text = "너는 최고야"
+        test_text = "이래서 한녀들은 창녀라는 소릴 듣는거야"
         test(model, tokenizer,test_text)
     elif mode == 'convert':
         # 저장된 모델 불러와서 ONNX로 변환
