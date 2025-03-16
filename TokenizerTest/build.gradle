@@ -1,0 +1,27 @@
+plugins {
+    id 'java'
+    id 'application'
+}
+
+group = 'example.com'
+version = '1.0-SNAPSHOT'
+
+repositories {
+    mavenCentral()
+}
+
+dependencies {
+    testImplementation platform('org.junit:junit-bom:5.10.0')
+    testImplementation 'org.junit.jupiter:junit-jupiter'
+    // https://mvnrepository.com/artifact/ai.djl.huggingface/tokenizers
+    implementation 'ai.djl.huggingface:tokenizers:0.31.1'
+
+}
+
+application{
+    mainClass = "example.com.Main"
+}
+
+test {
+    useJUnitPlatform()
+}

@@ -244,7 +244,7 @@ if __name__ == '__main__':
         model = BertForSequenceClassification.from_pretrained(MODEL_SAVE_PATH)
         tokenizer = AutoTokenizer.from_pretrained(MODEL_SAVE_PATH)
         model.to(device)
-        test_text = "이래서 한녀들은 창녀라는 소릴 듣는거야"
+        test_text = "느림보거북"
         test(model, tokenizer,test_text)
     elif mode == 'convert':
         # 저장된 모델 불러와서 ONNX로 변환
