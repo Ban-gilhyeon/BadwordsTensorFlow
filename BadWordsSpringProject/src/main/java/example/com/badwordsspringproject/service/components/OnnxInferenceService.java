@@ -4,7 +4,9 @@ import ai.onnxruntime.OnnxTensor;
 import ai.onnxruntime.OrtEnvironment;
 import ai.onnxruntime.OrtException;
 import ai.onnxruntime.OrtSession;
+import jakarta.annotation.PostConstruct;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
 import java.nio.LongBuffer;
@@ -14,8 +16,18 @@ import java.util.Map;
 @Component
 @RequiredArgsConstructor
 public class OnnxInferenceService {
-    private final OrtEnvironment env;
-    private final OrtSession session;
+    private  OrtEnvironment env;
+    private  OrtSession session;
+
+    @Value("$onnx.model.path")
+    private String modelPath;
+
+    @PostConstruct
+    public void init() throws OrtException {
+        env = OrtEnvironment.getEnvironment();
+        OrtSession.SessionOptions options = new OrtSession.SessionOptions();
+        session = env.createSession(modelPath, options);
+    }
 
     //int64 입력을 LongBuffer로 받아 ONNX 추론 수행
     public float[][] runInference(
