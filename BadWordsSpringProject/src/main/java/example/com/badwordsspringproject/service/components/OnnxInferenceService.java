@@ -19,7 +19,7 @@ public class OnnxInferenceService {
     private  OrtEnvironment env;
     private  OrtSession session;
 
-    @Value("$onnx.model.path")
+    @Value("${onnx.model.path}")
     private String modelPath;
 
     @PostConstruct
@@ -30,23 +30,25 @@ public class OnnxInferenceService {
     }
 
     //int64 입력을 LongBuffer로 받아 ONNX 추론 수행
-    public float[][] runInference(
-            long[] inputIdsData,
-            long[] attentionMaskData,
-            long[] inputShape) throws OrtException {
+    public float[][] runInference(long[] inputIdsData, long[] attentionMaskData, long[] inputShape) throws OrtException {
+        // long 배열을 LongBuffer로 감싸기
         LongBuffer inputIdsBuffer = LongBuffer.wrap(inputIdsData);
         LongBuffer attentionMaskBuffer = LongBuffer.wrap(attentionMaskData);
 
-        OnnxTensor inputIdsTensor = OnnxTensor.createTensor(env, inputIdsBuffer, inputShape);
-        OnnxTensor attentionMaskTensor = OnnxTensor.createTensor(env, attentionMaskBuffer, inputShape);
+        // OnnxTensor를 생성할 때, OnnxJavaType.INT64를 지정하여 int64 텐서를 생성합니다.
+        OnnxTensor inputIdsTensor = OnnxTensor.createTensor(env, inputIdsBuffer, inputShape, OrtJavaType.INT64);
+        OnnxTensor attentionMaskTensor = OnnxTensor.createTensor(env, attentionMaskBuffer, inputShape, OrtJavaType.INT64);
 
+
+        // 모델의 입력 이름은 ONNX 변환 시 지정한 이름과 정확히 일치해야 합니다.
         Map<String, OnnxTensor> inputs = new HashMap<>();
-        inputs.put("inputIds", inputIdsTensor);
-        inputs.put("attentionMask", attentionMaskTensor);
+        inputs.put("input_ids", inputIdsTensor);
+        inputs.put("attention_mask", attentionMaskTensor);
 
         OrtSession.Result results = session.run(inputs);
         float[][] logits = (float[][]) results.get(0).getValue();
 
+        // 사용한 텐서 자원 해제
         inputIdsTensor.close();
         attentionMaskTensor.close();
         return logits;

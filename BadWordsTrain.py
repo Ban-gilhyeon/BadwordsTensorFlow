@@ -15,7 +15,7 @@ EPOCHS = 3  # 빠른 테스트를 위해 에포크 수를 1로 설정
 LEARNING_RATE = 1e-5
 # MODEL_SAVE_PATH를 절대 경로로 설정 (또는 "saved_model"과 같이 상대 경로 대신 사용)
 MODEL_SAVE_PATH = os.path.abspath("./saved_model")
-ONNX_OUTPUT_PATH = os.path.abspath("./onnx_model")
+ONNX_OUTPUT_PATH = os.path.abspath("./onnx_model/")
 
 device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
 

@@ -1,0 +1,7 @@
+spring:
+  application:
+    name: BadWordsSpringProject
+
+onnx:
+  model:
+    path: "/Users/bangilhyeon/git/BadwordsTensorFlow/onnx_model"
